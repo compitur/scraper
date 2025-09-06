@@ -2,26 +2,67 @@
 #include <cpr/cpr.h>
 #include "gumbo.h"
 
-int main() {
-    std::cout << "Running scraper..." << std::endl;
-
-    cpr::Response r = cpr::Get(cpr::Url{"http://www.example.com"});
-    
-    if (r.status_code == 200) {
-        std::cout << "Successfully fetched example.com with status code: " << r.status_code << std::endl;
-        
-        // Parse the HTML content with Gumbo
-        GumboOutput* output = gumbo_parse(r.text.c_str());
-        
-        std::cout << "Gumbo has parsed the HTML." << std::endl;
-        
-        // Don't forget to free the memory allocated by gumbo
-        gumbo_destroy_output(&kGumboDefaultOptions, output);
-        
-        std::cout << "Scraper setup successful!" << std::endl;
+static std::string cleantext(GumboNode* node) {
+    if (node->type == GUMBO_NODE_TEXT) {
+        return std::string(node->v.text.text);
+    } else if (node->type == GUMBO_NODE_ELEMENT &&
+               node->v.element.tag != GUMBO_TAG_SCRIPT &&
+               node->v.element.tag != GUMBO_TAG_STYLE) {
+        std::string contents = "";
+        GumboVector* children = &node->v.element.children;
+        for (unsigned int i = 0; i < children->length; ++i) {
+            contents += cleantext(static_cast<GumboNode*>(children->data[i]));
+        }
+        return contents;
     } else {
-        std::cerr << "Failed to fetch URL, status code: " << r.status_code << std::endl;
+        return "";
     }
+}
+
+static void search_for_table_body(GumboNode* node, GumboNode** table_body) {
+    if (*table_body || node->type != GUMBO_NODE_ELEMENT) {
+        return;
+    }
+
+    if (node->v.element.tag == GUMBO_TAG_TBODY) {
+        *table_body = node;
+        return;
+    }
+
+    GumboVector* children = &node->v.element.children;
+    for (unsigned int i = 0; i < children->length; ++i) {
+        search_for_table_body(static_cast<GumboNode*>(children->data[i]), table_body);
+    }
+}
+
+int main() {
+    std::string url = "https://obs.itu.edu.tr/public/DersProgram/DersProgramSearch?programSeviyeTipiAnahtari=LS&dersBransKoduId=3";
+    cpr::Response r = cpr::Get(cpr::Url{url});
+
+    if (r.status_code != 200) {
+        std::cerr << "URL'den veri çekilemedi. Durum Kodu: " << r.status_code << std::endl;
+        return 1;
+    }
+    std::cout << "HTML başarıyla çekildi." << std::endl;
+
+    // 2. HTML'i Gumbo ile ayrıştır
+    GumboOutput* output = gumbo_parse(r.text.c_str());
+
+    // 3. Ders tablosunun body'sini bul (tbody)
+    GumboNode* table_body = nullptr;
+    search_for_table_body(output->root, &table_body);
+
+    // 4. Tablo bulunduysa, metnini temizle ve yazdır
+    if (table_body) {
+        std::cout << "\n--- Tablodan Çekilen Ham Metin ---\n" << std::endl;
+        std::string table_text = cleantext(table_body);
+        std::cout << table_text << std::endl;
+    } else {
+        std::cout << "Ders tablosu (tbody) bulunamadı." << std::endl;
+    }
+
+    // 5. Gumbo tarafından ayrılan belleği serbest bırak
+    gumbo_destroy_output(&kGumboDefaultOptions, output);
 
     return 0;
 }
