@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cpr/cpr.h>
 #include "gumbo.h"
+#include <fstream>
 
 static std::string cleantext(GumboNode* node) {
     if (node->type == GUMBO_NODE_TEXT) {
@@ -57,11 +58,21 @@ int main() {
         std::cout << "\n--- Tablodan Çekilen Ham Metin ---\n" << std::endl;
         std::string table_text = cleantext(table_body);
         std::cout << table_text << std::endl;
+
+        // 5. Metni bir dosyaya yaz
+        std::ofstream outfile("../data/parsed_text.txt");
+        if (outfile.is_open()) {
+            outfile << table_text;
+            outfile.close();
+            std::cout << "\nMetin 'data/parsed_text.txt' dosyasına başarıyla yazıldı." << std::endl;
+        } else {
+            std::cerr << "\nDosya oluşturulamadı." << std::endl;
+        }
     } else {
         std::cout << "Ders tablosu (tbody) bulunamadı." << std::endl;
     }
 
-    // 5. Gumbo tarafından ayrılan belleği serbest bırak
+    // 6. Gumbo tarafından ayrılan belleği serbest bırak
     gumbo_destroy_output(&kGumboDefaultOptions, output);
 
     return 0;
