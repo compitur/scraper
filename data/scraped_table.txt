@@ -1,0 +1,34 @@
+CRN	Ders Kodu	Ders Adı	Öğretim Üyesi	Gün	Saat	Kontenjan	Yazılan	Dersi Alabilen Programlar
+13491	BLG 113E	Intr.toComp.Eng.and Ethics	Burak Berk Üstündağ ,Gökhan İnce	Çarşamba	13:30/15:29	150	150	BLG_LS, BLGE_LS, CEN_LS
+13503	BLG 212E	Microprocessor Systems	Ayşe Yılmazer Metin	Pazartesi	08:30/11:29	90	94	BLG_LS, BLGE_LS, CEN_LS
+13504	BLG 212E	Microprocessor Systems	Gökhan İnce	Pazartesi	08:30/11:29	90	93	BLG_LS, BLGE_LS
+13494	BLG 223E	Data Structures	Yusuf Hüseyin Şahin	SalıÇarşamba	08:30/10:2913:30/15:29	80	89	BLG_LS, BLGE_LS, SECE_LS
+13495	BLG 231E	Digital Circuits	Feza Buzluca	Cuma	08:30/11:29	80	88	BLG_LS, BLGE_LS, CEN_LS, SECE_LS
+13496	BLG 231E	Digital Circuits	Sanem Kabadayı	Cuma	08:30/11:29	80	80	BLG_LS, BLGE_LS, SECE_LS
+13505	BLG 317E	Database Systems	Ali Çakmak	Çarşamba	08:30/11:29	90	90	BLG_LS, BLGE_LS, CEN_LS
+13508	BLG 317E	Database Systems	Kadir Özlem	Çarşamba	08:30/11:29	90	87	BLG_LS, BLGE_LS, CEN_LS
+13511	BLG 317E	Database Systems	Ahmet Cüneyd Tantuğ	Pazartesi	09:30/12:29	75	75	CEN_LS, YZVE_LS
+13513	BLG 335E	Analysis of Algorithms I	Mehmet Baysan	Perşembe	10:30/13:29	80	80	BLG_LS, BLGE_LS, CEN_LS, SECE_LS, YZVE_LS
+13518	BLG 335E	Analysis of Algorithms I	İlkay Öksüz	Perşembe	08:30/11:29	80	80	BLG_LS, BLGE_LS, CEN_LS, SECE_LS, YZVE_LS
+13519	BLG 335E	Analysis of Algorithms I	Berna Kiraz	Cuma	09:30/12:29	75	75	BLG_LS, BLGE_LS, CEN_LS, SECE_LS, YZVE_LS
+13529	BLG 337E	Principles of Computer Comm.	Abdül Halim Zaim	Cuma	14:30/17:29	70	60	BLG_LS, BLGE_LS, CEN_LS
+13530	BLG 345E	Logic & Computability	Mehmet Tahir Sandıkkaya	Salı	09:30/12:29	70	51	BLG_LS, BLGE_LS, CEN_LS
+13531	BLG 348E	Introduction to Bioinformatics	Mehmet Baysan	Perşembe	14:30/17:29	70	50	BLG_LS, BLGE_LS, CEN_LS
+13521	BLG 351E	Microcomputer Lab.	Nizamettin Aydın	Pazartesi	12:30/14:29	60	60	BLG_LS, BLGE_LS
+13523	BLG 351E	Microcomputer Lab.	İlkay Öksüz	Salı	08:30/10:29	60	32	BLG_LS, BLGE_LS
+13526	BLG 351E	Microcomputer Lab.	Mustafa Ersel Kamaşak	Cuma	14:30/16:29	60	60	BLG_LS, BLGE_LS
+13534	BLG 411E	Software Engineering	Ayşe Tosun Kühn	Cuma	09:30/12:29	95	90	BLG_LS, BLGE_LS, CEN_LS, YZVE_LS
+13536	BLG 411E	Software Engineering	Tolga Ovatman	Cuma	09:30/12:29	95	95	BLG_LS, BLGE_LS, CEN_LS, YZVE_LS
+13543	BLG 422E	Computer Networks	Tuğçe Bilen ,Gökhan Seçinti	Perşembe	09:30/12:29	80	20	BLG_LS, BLGE_LS, CEN_LS, YZVE_LS
+13538	BLG 435E	Artificial Intelligence	Mehmet Keskinöz	Salı	10:30/12:29	60	60	BLG_LS, BLGE_LS, CEN_LS
+13539	BLG 450E	Real-Time Systems Software	Deniz Turgay Altılar	Pazartesi	13:30/15:29	60	60	BLG_LS, BLGE_LS, CEN_LS
+13540	BLG 453E	Computer Vision	Yusuf Hüseyin Şahin	Perşembe	14:30/16:29	60	60	BLG_LS, BLGE_LS, CEN_LS
+13542	BLG 454E	Learning From Data	Yusuf Yaslan	Cuma	09:30/12:29	87	72	BLG_LS, BLGE_LS, CEN_LS, ECNE_LS, YZVE_LS
+13541	BLG 459E	Computer Security	Şerif Bahtiyar	Çarşamba	08:30/10:29	60	60	BLG_LS, BLGE_LS, CEN_LS
+13544	BLG 463E	Innov. Leadership in Comp.Eng.	Alper Almelek	Perşembe	09:30/12:29	40	40	BLG_LS, BLGE_LS, CEN_LS, YZVE_LS
+13545	BLG 4901	Bilgisayar Müh. Tasarımı I	Yusuf Hüseyin Şahin	-	-/-	200	0	BLG_LS
+13546	BLG 4901E	Computer Engineering Design I	Yusuf Hüseyin Şahin	-	-/-	200	185	BLG_LS, BLGE_LS, CEN_LS
+13547	BLG 4902	Bilgisayar Mühen. Tasarımı II	Yusuf Hüseyin Şahin	-	-/-	200	0	BLG_LS
+13548	BLG 4902E	Computer Engineering Design II	Yusuf Hüseyin Şahin	-	-/-	200	23	BLG_LS, BLGE_LS, CEN_LS
+13507	BLG 492	Bitirme Çalışması	Yusuf Hüseyin Şahin	-	-/-	200	0	BLG_LS
+13509	BLG 492E	Graduation Project	Yusuf Hüseyin Şahin	-	-/-	200	2	BLG_LS, BLGE_LS
