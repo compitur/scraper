@@ -1,114 +1,145 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
-import re
-import time
-import pathlib
-import requests
+import os, re, time, pathlib, requests
 from bs4 import BeautifulSoup
 from collections import OrderedDict
-from typing import List, Dict, Tuple
 
 BASE = "https://obs.itu.edu.tr"
-
-# ------------------------- configuration -------------------------
 OUTFILE = os.path.join("..", "data", "itu_all_plans.txt")
 
+# Scope
 DEFAULT_PLAN_TYPES = [
     "lisans", "cap", "yandal", "uolp", "ddp",
     "yuksek-lisans", "yuksek-lisans-ikinci-ogretim", "doktora",
 ]
-DEFAULT_LEVELS = [2]  # only Lisans level
-DELAY = 0.40          # polite delay between requests
-TIMEOUT = 30
-RETRIES = 3
+DEFAULT_LEVELS = [2]  # Lisans only; add more if needed
+
+# Networking
+DELAY, TIMEOUT, RETRIES = 0.4, 30, 3
 
 PLAN_LABELS = {
-    "lisans": "Lisans",
-    "cap": "ÇAP",
-    "yandal": "Yandal",
-    "uolp": "UOLP/DDP",
-    "ddp":  "UOLP/DDP",
+    "lisans": "Lisans", "cap": "ÇAP", "yandal": "Yandal",
+    "uolp": "UOLP/DDP", "ddp": "UOLP/DDP",
     "yuksek-lisans": "Yüksek Lisans",
     "yuksek-lisans-ikinci-ogretim": "Yüksek Lisans (İÖ)",
     "doktora": "Doktora",
 }
 
-PROGRAM_CODE_RE = re.compile(r"^[A-ZÇĞİÖŞÜ0-9_]+$", re.UNICODE)
-DETAIL_HREF_RE = re.compile(r"/public/DersPlan/DersPlanDetay/(\d+)")
-SEM_HEADER_RE  = re.compile(r"(^\d+\.\s*Yarıyıl)|(^\d+\s*Semester)|Yarıyıl|Semester", re.I|re.U)
+# Patterns
+PROGRAM_CODE_RE = re.compile(r"^[A-ZÇĞİÖŞÜ0-9_]+$")
+DETAIL_HREF_RE  = re.compile(r"/public/DersPlan/DersPlanDetay/(\d+)")
+SEM_HEADER_RE   = re.compile(r"(?:^\s*\d+\.\s*Yarıyıl|^\s*\d+\s*Semester|Yarıyıl|Semester)", re.I)
+COURSE_CODE_RE  = re.compile(r"[A-ZÇĞİÖŞÜ]{2,}\s*\d{3,}[A-Z]?$", re.U)
 
-# ---------------------------- HTTP helpers ----------------------------
+# ------------------ HTTP helpers ------------------
 
-def make_session(timeout: int = TIMEOUT, retries: int = RETRIES, backoff: float = 0.8) -> requests.Session:
+def make_session():
     s = requests.Session()
-    s.headers.update({"User-Agent": "ITU-CoursePlan-Scraper/1.0"})
-    s.request_timeout = timeout
-    s.request_retries = retries
-    s.request_backoff = backoff
+    s.headers.update({"User-Agent": "ITU-CoursePlan-Scraper/1.2"})
     return s
 
-def get(session: requests.Session, url: str, **kwargs) -> requests.Response:
-    timeout = kwargs.pop("timeout", getattr(session, "request_timeout", TIMEOUT))
-    retries = getattr(session, "request_retries", RETRIES)
-    backoff = getattr(session, "request_backoff", 0.8)
-    last_exc = None
-    for attempt in range(1, retries + 1):
+def get(session, url, **kwargs):
+    for attempt in range(RETRIES):
         try:
-            r = session.get(url, timeout=timeout, **kwargs)
+            r = session.get(url, timeout=TIMEOUT, **kwargs)
             r.raise_for_status()
             return r
         except Exception as e:
-            last_exc = e
-            if attempt < retries:
-                time.sleep(backoff * attempt)
+            if attempt < RETRIES - 1:
+                time.sleep(0.8 * (attempt + 1))
             else:
                 raise
-    raise last_exc
 
-# ------------------------- scraping primitives ------------------------
+# ------------------ faculties (from /public/DersPlan) ------------------
 
-def _nearest_faculty_for_tr(tr) -> str:
-    hdr = tr.find_previous(["h1","h2","h3","h4","h5","h6"])
-    if hdr:
-        txt = hdr.get_text(strip=True)
-        if txt and not txt.lower().startswith("program kodları"):
-            return txt
-    hdr2 = tr.find_previous(class_=re.compile(r"(card-header|accordion-header|header)", re.I))
-    if hdr2:
-        txt = hdr2.get_text(strip=True)
+def fetch_faculties(session):
+    """
+    Build {faculty_id -> faculty_name} from the Fakülte <select id="akademikBirimId">.
+    """
+    url = f"{BASE}/public/DersPlan"
+    r = get(session, url)
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    facmap = {}
+    for opt in soup.select("#akademikBirimId option"):
+        val = (opt.get("value") or "").strip()
+        name = opt.get_text(strip=True)
+        if val and val.isdigit():
+            facmap[val] = name
+    if not facmap:
+        print("[warn] Could not parse faculties from /public/DersPlan (dropdown).")
+    else:
+        print(f"[info] faculties loaded: {len(facmap)} items (from dropdown)")
+    return facmap
+
+# ------------------ programs (from ProgramKodlariList) ------------------
+
+def nearest_prev_h5(el):
+    h5 = el.find_previous("h5")
+    if h5:
+        txt = h5.get_text(strip=True)
         if txt and not txt.lower().startswith("program kodları"):
             return txt
     return None
 
-def fetch_program_codes(session: requests.Session, level: int = 2) -> List[Dict[str, str]]:
+def fetch_program_codes(session, level=2, facmap=None):
     """
-    Return list of {faculty, name, programKodu} for a given level (2 = Lisans).
-    Ignores generic 'Program Kodları' heading.
+    Return list of dicts: {faculty, faculty_id, name, programKodu}
+    Tries, in order:
+      1) row attribute data-akademikbirimid / data-fakulteid
+      2) nearest previous <h5> header on the page
+      3) fallback: "None"
     """
     url = f"{BASE}/public/GenelTanimlamalar/ProgramKodlariList?programSeviyeTipiId={level}"
     r = get(session, url)
     soup = BeautifulSoup(r.text, "html.parser")
 
     programs = []
-    current_faculty = None
-    for el in soup.select("h1,h2,h3,h4,h5,h6, table tbody tr"):
-        if el.name in {"h1","h2","h3","h4","h5","h6"}:
-            text = el.get_text(strip=True)
-            if text and not text.lower().startswith("program kodları"):
-                current_faculty = text
-        elif el.name == "tr":
-            tds = [td.get_text(strip=True) for td in el.select("td")]
-            if len(tds) >= 2 and PROGRAM_CODE_RE.match(tds[0]):
-                fac = current_faculty or _nearest_faculty_for_tr(el) or "None"
-                programs.append({"faculty": fac, "name": tds[1], "programKodu": tds[0]})
+    unknown_count = 0
+
+    # Walk all tables; rows that look like [CODE, NAME, ...]
+    for table in soup.select("table"):
+        for tr in table.select("tbody tr"):
+            tds = tr.select("td")
+            if len(tds) < 2:
+                continue
+            code = tds[0].get_text(strip=True)
+            name = tds[1].get_text(strip=True)
+            if not PROGRAM_CODE_RE.match(code):
+                continue
+
+            # Try to read faculty id from attributes
+            fac_id = tr.get("data-akademikbirimid") or tr.get("data-fakulteid") or ""
+            faculty = None
+            if fac_id and facmap and fac_id in facmap:
+                faculty = facmap[fac_id]
+
+            # If attribute not available, fall back to nearest <h5> grouping
+            if not faculty:
+                faculty = nearest_prev_h5(tr)
+
+            # Final fallback
+            if not faculty:
+                faculty = "None"
+                unknown_count += 1
+
+            programs.append({
+                "faculty": faculty,
+                "faculty_id": fac_id or None,
+                "name": name,
+                "programKodu": code,
+            })
+
+    print(f"[info] program list (level={level}) -> {len(programs)} programs; unknown faculties: {unknown_count}")
+    if programs:
+        s = programs[0]
+        print(f"       sample: {s['programKodu']} | {s['name']} | faculty={s['faculty']} (id={s['faculty_id']})")
     return programs
 
-def list_plan_ids(session: requests.Session, planTipiKodu: str, programKodu: str) -> List[Tuple[str, str]]:
-    """
-    For a (planTipiKodu, programKodu) pair, returns: list of (plan_id, effective_text).
-    """
+# ------------------ list plans for a program ------------------
+
+def list_plan_ids(session, planTipiKodu, programKodu):
     url = f"{BASE}/public/DersPlan/DersPlanlariList"
     r = get(session, url, params={"planTipiKodu": planTipiKodu, "programKodu": programKodu})
     soup = BeautifulSoup(r.text, "html.parser")
@@ -125,101 +156,69 @@ def list_plan_ids(session: requests.Session, planTipiKodu: str, programKodu: str
         out.append((m.group(1), effective_text))
     return out
 
-def _normalize_code(code: str) -> str:
-    # Remove spaces, keep diacritics & trailing letters (e.g., FIZ 101E -> FIZ101E)
+# ------------------ parse a plan's semesters + courses ------------------
+
+def _normalize_code(code):
     return re.sub(r"\s+", "", code)
 
-def _semester_sort_key(title: str) -> Tuple[int, str]:
-    # Try to sort "1. Yarıyıl", "2. Yarıyıl", "3 Semester", etc. numerically
-    m = re.search(r"(\d+)", title)
-    return (int(m.group(1)) if m else 999, title)
+def _semester_sort_key(title):
+    m = re.search(r"(\d+)", title or "")
+    return (int(m.group(1)) if m else 999, title or "")
 
-def parse_plan_detail(session: requests.Session, plan_id: str) -> OrderedDict:
+def parse_plan_detail(session, plan_id):
     """
-    Parse /DersPlanDetay/<id> and return OrderedDict:
-        { semester_title -> [course_codes_without_spaces, ...] }
-    Robust to minor DOM differences.
+    Return OrderedDict: { semester_title -> [course_code, ...] }
+    Strategy:
+      1) find heading that looks like semester; use its next table
+      2) fallback: scan all tables; if first column looks like course codes, accept in page order
     """
     url = f"{BASE}/public/DersPlan/DersPlanDetay/{plan_id}"
     r = get(session, url)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    # Primary: find headers that look like semester titles, then the next <table>
     candidates = []
-    for header in soup.select("h4, h5, h6, strong"):
-        htxt = header.get_text(" ", strip=True)
-        if htxt and SEM_HEADER_RE.search(htxt):
-            tbl = header.find_next("table")
+    for hdr in soup.find_all(["h4", "h5", "h6", "strong"]):
+        title = hdr.get_text(" ", strip=True)
+        if title and SEM_HEADER_RE.search(title):
+            tbl = hdr.find_next("table")
             if tbl:
-                candidates.append((htxt, tbl))
+                candidates.append((title, tbl))
 
     semesters = OrderedDict()
     if candidates:
-        # Sort by semester number if present
         candidates.sort(key=lambda x: _semester_sort_key(x[0]))
         for title, tbl in candidates:
             codes = []
             for tr in tbl.select("tbody tr"):
-                tds = tr.select("td")
-                if not tds:
+                td0 = tr.find("td")
+                if not td0:
                     continue
-                code_raw = tds[0].get_text(strip=True)
-                if not code_raw:
-                    continue
-                codes.append(_normalize_code(code_raw))
+                code_raw = td0.get_text(strip=True)
+                if code_raw and COURSE_CODE_RE.search(code_raw):
+                    codes.append(_normalize_code(code_raw))
             semesters[title] = codes
 
-    # Fallback: if nothing matched, try to grab all tables with plausible course rows
     if not semesters:
+        # fallback: detect course-y tables
         for idx, tbl in enumerate(soup.select("table")):
-            codes = []
-            tds0 = tbl.select("tbody tr td:first-child")
-            # Heuristic: if first column cells look like course codes, accept table
-            good = 0
-            for td in tds0:
-                text = td.get_text(strip=True)
-                if re.search(r"[A-ZÇĞİÖŞÜ]{2,}\s*\d{3,}[A-Z]?", text):
-                    good += 1
-            if good >= 3:  # at least a few course-like codes in the first column
-                for tr in tbl.select("tbody tr"):
-                    tds = tr.select("td")
-                    if not tds:
-                        continue
-                    code_raw = tds[0].get_text(strip=True)
-                    if not code_raw:
-                        continue
-                    codes.append(_normalize_code(code_raw))
-                semesters[f"Semester {idx+1}"] = codes
+            first_col = [td.get_text(strip=True) for td in tbl.select("tbody tr td:first-child")]
+            looks_like_courses = sum(1 for t in first_col if COURSE_CODE_RE.search(t)) >= 3
+            if not looks_like_courses:
+                continue
+            codes = [_normalize_code(t) for t in first_col if COURSE_CODE_RE.search(t)]
+            semesters[f"Semester {idx+1}"] = codes
 
     return semesters
 
-# --------------------------- output writer ----------------------------
+# ------------------ text output ------------------
 
-def clean_plan_header(program_name: str, effective_text: str) -> str:
-    """
-    Remove 'Detay ' prefix and build a clean PLAN line.
-    """
+def clean_plan_header(program_name, effective_text):
     text = effective_text.strip()
     if text.lower().startswith("detay"):
         text = text[5:].strip()
-    if program_name in text:
-        return text
-    return f"{program_name} {text}"
+    return text if (program_name in text) else f"{program_name} {text}"
 
-def append_block_with_semesters(f, faculty: str, plan_type_label: str, program_name: str,
-                                plan_header: str, sem_to_codes: OrderedDict) -> None:
-    """
-    Writes:
-      FACULTY
-      <faculty>
-      TYPE
-      <plan type>
-      MAJOR
-      <program name>
-      PLAN
-      <plan header>
-      <line per semester: CODE1;CODE2;...>
-    """
+def append_block(f, faculty, plan_type_label, program_name, plan_header, sem_to_codes):
     f.write("FACULTY\n")
     f.write(f"{faculty}\n")
     f.write("TYPE\n")
@@ -228,39 +227,43 @@ def append_block_with_semesters(f, faculty: str, plan_type_label: str, program_n
     f.write(f"{program_name}\n")
     f.write("PLAN\n")
     f.write(f"{plan_header}\n")
+    wrote_any = False
     for _, codes in sem_to_codes.items():
         if codes:
             f.write(";".join(codes) + "\n")
+            wrote_any = True
+    return wrote_any
 
-# ------------------------------- main --------------------------------
+# ------------------ main driver ------------------
 
 def main():
     pathlib.Path(os.path.dirname(OUTFILE)).mkdir(parents=True, exist_ok=True)
-    # truncate each run
-    with open(OUTFILE, "w", encoding="utf-8"):
-        pass
+    open(OUTFILE, "w", encoding="utf-8").close()  # truncate
 
     session = make_session()
 
-    total_programs = 0
-    total_plans = 0
+    # 1) faculties
+    facmap = fetch_faculties(session)
 
+    # 2) all programs per level
+    total_blocks = 0
     for level in DEFAULT_LEVELS:
-        programs = fetch_program_codes(session, level=level)
-        total_programs += len(programs)
+        programs = fetch_program_codes(session, level=level, facmap=facmap)
+        print(f"[info] level={level}: {len(programs)} programs")
 
         for planTipiKodu in DEFAULT_PLAN_TYPES:
             plan_type_label = PLAN_LABELS.get(planTipiKodu, planTipiKodu)
+            print(f"\n[info] == plan type: {planTipiKodu} ({plan_type_label}) ==")
 
             for p in programs:
                 programKodu = p["programKodu"]
                 program_name = p["name"]
                 faculty = p["faculty"] or "None"
 
-                # Find all plans (rows) for this (plan type, program)
                 try:
                     plan_rows = list_plan_ids(session, planTipiKodu, programKodu)
-                except Exception:
+                except Exception as e:
+                    print(f"[warn] list_plan_ids failed for {programKodu}/{planTipiKodu}: {e}")
                     plan_rows = []
 
                 if not plan_rows:
@@ -268,22 +271,31 @@ def main():
 
                 for plan_id, effective_text in plan_rows:
                     plan_header = clean_plan_header(program_name, effective_text)
+                    print(f"[scrape] {faculty} | {programKodu} | {program_name}")
+                    print(f"         PLAN {plan_id}: {plan_header}")
 
-                    # Parse semesters & codes
                     try:
                         sem_to_codes = parse_plan_detail(session, plan_id)
-                    except Exception:
+                    except Exception as e:
+                        print(f"[warn] parse_plan_detail failed for {plan_id}: {e}")
                         sem_to_codes = OrderedDict()
 
+                    total_courses = sum(len(v) for v in sem_to_codes.values())
+                    print(f"         -> semesters: {len(sem_to_codes)} | courses: {total_courses}")
+
                     with open(OUTFILE, "a", encoding="utf-8") as f:
-                        append_block_with_semesters(
+                        wrote_any = append_block(
                             f, faculty, plan_type_label, program_name, plan_header, sem_to_codes
                         )
-                    total_plans += 1
+
+                    if not wrote_any:
+                        print("         [note] No course rows written for this plan (check page structure).")
+
+                    total_blocks += 1
                     time.sleep(DELAY)
 
-    print(f"[done] wrote: {OUTFILE}")
-    print(f"[stats] programs: {total_programs}, plans written: {total_plans}")
+    print(f"\n[done] wrote: {OUTFILE}")
+    print(f"[stats] total plan blocks written: {total_blocks}")
 
 if __name__ == "__main__":
     main()
